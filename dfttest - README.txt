@@ -1,5 +1,5 @@
 
-                                       dfttest v1.9.7
+                                       dfttest v1.9.8
                                        Original code by tritical
                                        16-bit modification by Firesledge
                                        Avs+ port by DJATOM
@@ -584,6 +584,11 @@ Parameters:
 ---------------------------------------------------------------------------------------------------
 
 Changes:
+2026.03.23 v1.9.8
+  - Thread safety: use Avisynth+ V12 global lock (AcquireGlobalLock/ReleaseGlobalLock) around
+    FFTW plan creation and destruction. Falls back to legacy std::mutex on older Avisynth+ versions.
+  - Update avisynth headers to V12 interface
+
 2021.10.28 v1.9.7
   - pass Avisynth+ frame properties
 
