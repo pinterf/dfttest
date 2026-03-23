@@ -186,6 +186,10 @@ class dfttest : public GenericVideoFilter
 {
 private:
   bool has_at_least_v8;
+  bool has_at_least_v12; // global lock support
+  size_t avisynth_if_ver;
+  size_t avisynth_bugfix_ver;
+  IScriptEnvironment* env_saved; // save for destructor (global lock)
   int bits_per_pixel;
   int pixelsize;
   bool Y, U, V, zmean, lsb_in_flag, lsb_out_flag, quiet_flag;

@@ -106,7 +106,62 @@ Modifications:
 
 // FFTW is not thread-safe, need to guard around its functions (except fftw_execute).
 // http://www.fftw.org/fftw3_doc/Thread-safety.html#Thread-safety
-static std::mutex fftw_mutex; // defined as static
+// Pre V12: does not guard locks from multiple plugins using FFTW at the same time.
+static std::mutex fftw_legacy_mutex; // defined as static
+
+// Since Avisynth IF v12 use global lock which handles fftw locks for different plugins which use the same FFTW library.
+class GlobalLockGuard
+{
+public:
+  GlobalLockGuard(IScriptEnvironment* env_ptr, const char* lock_name, bool use_v12_global_lock)
+    : m_env_ptr(env_ptr), m_lockName(lock_name), m_acquired(false), m_is_legacy_lock(false)
+  {
+    if (!m_env_ptr || !m_lockName) {
+      return;
+    }
+
+    if (use_v12_global_lock)
+    {
+      m_acquired = m_env_ptr->AcquireGlobalLock(m_lockName);
+      if (m_acquired) {
+        m_is_legacy_lock = false;
+        return;
+      }
+    }
+
+    if (strcmp(m_lockName, "fftw") == 0) {
+      fftw_legacy_mutex.lock();
+      m_acquired = true;
+      m_is_legacy_lock = true;
+    }
+  }
+
+  ~GlobalLockGuard()
+  {
+    if (m_acquired)
+    {
+      if (m_is_legacy_lock) {
+        fftw_legacy_mutex.unlock();
+      }
+      else {
+        if (m_env_ptr) {
+          m_env_ptr->ReleaseGlobalLock(m_lockName);
+        }
+      }
+    }
+  }
+
+  bool is_acquired() const { return m_acquired; }
+
+  GlobalLockGuard(const GlobalLockGuard&) = delete;
+  GlobalLockGuard& operator=(const GlobalLockGuard&) = delete;
+
+private:
+  IScriptEnvironment* m_env_ptr;
+  const char* m_lockName;
+  bool m_acquired;
+  bool m_is_legacy_lock;
+};
 
 PVideoFrame __stdcall dfttest::GetFrame(int n, IScriptEnvironment* env)
 {
@@ -1609,9 +1664,20 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   sbeta(_sbeta), tbeta(_tbeta),
   sfile(_sfile), sfile2(_sfile2), pminfile(_pminfile), pmaxfile(_pmaxfile)
 {
-  has_at_least_v8 = true;
-  try { env->CheckVersion(8); }
-  catch (const AvisynthError&) { has_at_least_v8 = false; }
+  env_saved = env;
+
+  avisynth_if_ver = 6;
+  avisynth_bugfix_ver = 0;
+  try { env->CheckVersion(8); avisynth_if_ver = 8; }
+  catch (const AvisynthError&) {}
+  try {
+    env->CheckVersion(9); // GetEnvProperty with AEP_INTERFACE_VERSION is only safe since V9
+    avisynth_if_ver = env->GetEnvProperty(AEP_INTERFACE_VERSION);
+    avisynth_bugfix_ver = env->GetEnvProperty(AEP_INTERFACE_BUGFIX);
+  }
+  catch (const AvisynthError&) {}
+  has_at_least_v8 = avisynth_if_ver >= 8;
+  has_at_least_v12 = avisynth_if_ver >= 12; // global locks
 
   ft = fti = ftg = NULL;
   ebuff = NULL;
@@ -1802,7 +1868,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   
   // FFTW plan construction and destruction are not thread-safe.
   {
-    std::lock_guard<std::mutex> lock(fftw_mutex);
+    GlobalLockGuard fftw_lock(env, "fftw", has_at_least_v12);
 
     if (tbsize > 1)
       ftg = fftwf_plan_dft_r2c_3d(tbsize, sbsize, sbsize, dftgr, dftgc,
@@ -1871,7 +1937,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   // FFTW plan construction and destruction are not thread-safe.
   // http://www.fftw.org/fftw3_doc/Thread-safety.html#Thread-safety
   {
-    std::lock_guard<std::mutex> lock(fftw_mutex);
+    GlobalLockGuard fftw_lock(env, "fftw", has_at_least_v12);
     if (tbsize > 1)
     {
       ft = fftwf_plan_dft_r2c_3d(tbsize, sbsize, sbsize, dftgr, ta, FFTW_PATIENT | FFTW_DESTROY_INPUT);
@@ -2622,9 +2688,12 @@ dfttest::~dfttest()
     free(pssInfo[i]);
   }
   free(pssInfo);
-  if (ft) fftwf_destroy_plan(ft);
-  if (fti) fftwf_destroy_plan(fti);
-  if (ftg) fftwf_destroy_plan(ftg);
+  {
+    GlobalLockGuard fftw_lock(env_saved, "fftw", has_at_least_v12);
+    if (ft) fftwf_destroy_plan(ft);
+    if (fti) fftwf_destroy_plan(fti);
+    if (ftg) fftwf_destroy_plan(ftg);
+  }
   if (dftgc) _aligned_free(dftgc);
   if (dstPF) delete dstPF;
   if (dstPF_lsb) delete dstPF_lsb;
