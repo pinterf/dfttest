@@ -1,0 +1,11 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+    <BuildType Name="ReleaseClangCL" />
+    <BuildType Name="ReleaseXP" />
+    <Platform Name="Win32" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="dfttest/dfttest.vcxproj" Id="d471cd49-780b-4625-9946-127382b21f19" />
+</Solution>
