@@ -9,8 +9,44 @@ Info:
 
    2D/3D frequency domain denoiser.
 
-   Requires libfftw3f-3.dll to be in the search path.
-   http://www.fftw.org/install/windows.html
+   Requires FFTW3 single-precision library at runtime (loaded dynamically):
+     Windows: libfftw3f-3.dll must be in the search path.
+              Download from http://www.fftw.org/install/windows.html
+     Linux:   libfftw3f.so.3
+              Install: sudo apt install libfftw3-3      (Debian/Ubuntu)
+                    or sudo dnf install fftw-libs-single (Fedora/RHEL)
+
+
+---------------------------------------------------------------------------------------------------
+
+Build instructions:
+
+   Windows (Visual Studio):
+     Open dfttest.sln (or dfttest.slnx) and build, or from the command line:
+       devenv dfttest.sln /Build "Release|x64"
+     Configurations: Debug|Win32, Debug|x64, Release|Win32, Release|x64,
+                     ReleaseClangCL|x64, ReleaseXP|x64
+
+   Windows (MinGW/MSYS2) and Linux — CMake:
+     From the project root:
+       cmake -B build -S .
+       cmake --build build -j$(nproc)
+
+     Build after clean:
+       cmake --build build --clean-first
+
+     Force-disable Intel SIMD (e.g. for ARM builds — auto-detected otherwise):
+       cmake -B build -S . -DENABLE_INTEL_SIMD=OFF
+
+     Delete CMake cache and reconfigure:
+       rm build/CMakeCache.txt
+
+     Binaries:
+       Linux:   build/dfttest/libdfttest.so
+       Windows: build/dfttest/Release/dfttest.dll
+
+     Install (Linux):
+       cd build && sudo make install
 
 
 ---------------------------------------------------------------------------------------------------
@@ -584,10 +620,16 @@ Parameters:
 ---------------------------------------------------------------------------------------------------
 
 Changes:
-2026.03.23 v1.9.8
+2026.03.24 v1.9.8
+  - Cross-platform: builds on Linux (GCC/Clang) and Windows (MSVC/ClangCL/MinGW).
+    CMakeLists.txt added. Intel SIMD auto-detected; disabled automatically on ARM/RISC-V.
+  - Threading: replaced Windows API (HANDLE, events, _beginthreadex, CRITICAL_SECTION)
+    with C++17 std::thread, std::mutex, std::condition_variable.
   - Thread safety: use Avisynth+ V12 global lock (AcquireGlobalLock/ReleaseGlobalLock) around
-    FFTW plan creation and destruction. Falls back to legacy std::mutex on older Avisynth+ versions.
-  - Update avisynth headers to V12 interface
+    FFTW plan creation and destruction. Falls back to std::mutex on older Avisynth+ versions.
+  - CPU detection: removed internal CPUCheckForExtensions(), use env->GetCPUFlags() instead.
+  - Dynamic library loading (FFTW3): platform-agnostic via LoadLibrary/dlopen abstraction.
+  - Update avisynth headers to V12 interface.
 
 2021.10.28 v1.9.7
   - pass Avisynth+ frame properties
