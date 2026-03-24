@@ -31,6 +31,7 @@
 #include "dfttest_avx.h"
 #include "dfttest_avx2.h"
 #include "smmintrin.h"
+#include <algorithm>
 #include <cassert>
 #include <mutex>
 #include <thread>
@@ -679,7 +680,7 @@ void intcast_float_to_uint16_t_C(const float* p, unsigned char* dst, const int s
   for (int y = 0; y < src_height; ++y)
   {
     for (int x = 0; x < src_width; ++x)
-      reinterpret_cast<uint16_t *>(dst)[x] = min(max((int)(p[x] * factor + 0.5f), 0), max_pixel_value);
+      reinterpret_cast<uint16_t *>(dst)[x] = std::min(std::max((int)(p[x] * factor + 0.5f), 0), max_pixel_value);
     p += width;
     dst += dst_pitch;
   }
@@ -704,7 +705,7 @@ void intcast_float_to_uint8_t_C(const float* p, unsigned char* dst, const int sr
   for (int y = 0; y < src_height; ++y)
   {
     for (int x = 0; x < src_width; ++x)
-      dst[x] = min(max((int)(p[x] + 0.5f), 0), 255);
+      dst[x] = std::min(std::max((int)(p[x] + 0.5f), 0), 255);
     p += width;
     dst += dst_pitch;
   }
@@ -723,7 +724,7 @@ void intcast_float_to_stacked16_C(const float* p, unsigned char* dst, unsigned c
       const float vf = p[x] * 256;
       int v;
       v = int(vf + 0.5f);
-      v = min(max(v, 0), 65535);
+      v = std::min(std::max(v, 0), 65535);
       dst[x] = static_cast <unsigned char> (v >> 8);
       dst_lsb[x] = static_cast <unsigned char> (v);
     }
@@ -753,7 +754,7 @@ void dither_C(const float* p, unsigned char* dst, const int src_height,
       const int v = mode == 1 ?
         (int)(p[x] + dc[x] + 0.5f) :
         (int)(p[x] + mtr.randf() * scale - off + dc[x] + 0.5f);
-      dst[x] = min(max(v, 0), 255);
+      dst[x] = std::min(std::max(v, 0), 255);
       const float qerror = p[x] - dst[x];
       if (x != 0)
         dn[x - 1] += qerror * 0.1875f;
@@ -883,7 +884,7 @@ PVideoFrame dfttest::GetFrame_T(int n, IScriptEnvironment* env)
   }
   else
   {
-    int fbframe = -max((tbsize - tosize), tosize);
+    int fbframe = -std::max((tbsize - tosize), tosize);
     for (; fbframe <= n - tbsize; fbframe += (tbsize - tosize));
     int lbframe = fbframe;
     for (; lbframe <= n - (tbsize - tosize); lbframe += (tbsize - tosize));
@@ -894,7 +895,7 @@ PVideoFrame dfttest::GetFrame_T(int n, IScriptEnvironment* env)
     }
     else
     {
-      fbframe = -max((tbsize - tosize), tosize);
+      fbframe = -std::max((tbsize - tosize), tosize);
       for (; fbframe <= lbframe - tbsize; fbframe += (tbsize - tosize));
       for (int q = tbsize - tosize; q < tbsize; ++q)
       {
@@ -1167,7 +1168,7 @@ void filter_0_C(float* dftc, const float* sigmas, const int ccnt,
   for (int h = 0; h < ccnt; h += 2)
   {
     const float psd = dftc[h + 0] * dftc[h + 0] + dftc[h + 1] * dftc[h + 1];
-    const float coeff = max((psd - sigmas[h]) / (psd + 1e-15f), 0.0f); // PF 200324: ? Every 2nd sigma value?
+    const float coeff = std::max((psd - sigmas[h]) / (psd + 1e-15f), 0.0f); // PF 200324: ? Every 2nd sigma value?
     dftc[h + 0] *= coeff;
     dftc[h + 1] *= coeff;
   }
@@ -1360,7 +1361,7 @@ void filter_5_C(float* dftc, const float* sigmas, const int ccnt,
   for (int h = 0; h < ccnt; h += 2)
   {
     const float psd = dftc[h + 0] * dftc[h + 0] + dftc[h + 1] * dftc[h + 1];
-    const float coeff = powf(max((psd - sigmas[h]) / (psd + 1e-15f), 0.0f), beta);
+    const float coeff = powf(std::max((psd - sigmas[h]) / (psd + 1e-15f), 0.0f), beta);
     dftc[h + 0] *= coeff;
     dftc[h + 1] *= coeff;
   }
@@ -1402,7 +1403,7 @@ void filter_6_C(float* dftc, const float* sigmas, const int ccnt,
   for (int h = 0; h < ccnt; h += 2)
   {
     const float psd = dftc[h + 0] * dftc[h + 0] + dftc[h + 1] * dftc[h + 1];
-    const float coeff = sqrtf(max((psd - sigmas[h]) / (psd + 1e-15f), 0.0f));
+    const float coeff = sqrtf(std::max((psd - sigmas[h]) / (psd + 1e-15f), 0.0f));
     dftc[h + 0] *= coeff;
     dftc[h + 1] *= coeff;
   }
@@ -1767,7 +1768,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   }
   else
   {
-    const int ae = max(sbsize - sosize, sosize) * 2;
+    const int ae = std::max(sbsize - sosize, sosize) * 2;
     // luma
     noxl = vi.width + EXTRA(vi.width, sbsize) + ae;
     noyl = proc_height + EXTRA(proc_height, sbsize) + ae;
