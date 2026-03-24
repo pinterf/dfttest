@@ -29,7 +29,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <float.h>
-#include <process.h>
+#include <thread>
+#include <condition_variable>
 #include <time.h>
 #include "avisynth.h"
 #include "PlanarFrame.h"
@@ -55,11 +56,11 @@ typedef void (*fftwf_execute_dft_c2r_proc) (fftwf_plan, fftwf_complex*, float*);
 
 #define EXTRA(a,b) (((a)%(b))?((b)-((a)%(b))):0)
 
-unsigned __stdcall threadPool(void* ps);
-void func_0(void* ps);
-void func_1(void* ps);
+struct PS_INFO;
+void threadPool(PS_INFO* ps);
+void func_0(PS_INFO* ps);
+void func_1(PS_INFO* ps);
 
-int num_processors();
 
 void removeMean_C(float* dftc, const float* dftgc, const int ccnt, float* dftc2);
 void removeMean_SSE(float* dftc, const float* dftgc, const int ccnt, float* dftc2);
@@ -178,8 +179,10 @@ struct PS_INFO {
   proc0_t* proc0;
   void (*proc1)(const float*, const float*, float*, const int,
     const int);
-  LPCRITICAL_SECTION csect;
-  HANDLE nextJob, jobFinished;
+  std::mutex* csect;
+  std::mutex mtx;
+  std::condition_variable cv;
+  int job_state; // 0=idle, 1=working, -1=shutdown
 };
 
 class dfttest : public GenericVideoFilter
@@ -217,9 +220,8 @@ private:
   nlFrame* nlf;
   HINSTANCE hLib;
   PS_INFO** pssInfo;
-  unsigned* tids;
-  HANDLE* thds;
-  CRITICAL_SECTION csect;
+  std::thread* thds;
+  std::mutex csect;
   const char* sfile, * sfile2, * pminfile, * pmaxfile;
   VideoInfo vi_src;
   VideoInfo vi_byte;

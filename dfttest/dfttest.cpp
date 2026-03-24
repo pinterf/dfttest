@@ -33,6 +33,7 @@
 #include "smmintrin.h"
 #include <cassert>
 #include <mutex>
+#include <thread>
 
 // FFTW is not thread-safe, need to guard around its functions (except fftw_execute).
 // http://www.fftw.org/fftw3_doc/Thread-safety.html#Thread-safety
@@ -100,21 +101,26 @@ PVideoFrame __stdcall dfttest::GetFrame(int n, IScriptEnvironment* env)
   return GetFrame_T(n, env);
 }
 
-unsigned __stdcall threadPool(void* ps)
+void threadPool(PS_INFO* pss)
 {
-  const PS_INFO* pss = (PS_INFO*)ps;
   while (true)
   {
-    WaitForSingleObject(pss->nextJob, INFINITE);
-    if (pss->type < 0)
-      return 0;
+    {
+      std::unique_lock<std::mutex> lock(pss->mtx);
+      pss->cv.wait(lock, [pss] { return pss->job_state != 0; });
+      if (pss->job_state < 0)
+        return;
+    }
     if (!(pss->type & 2)) // tbsize=1
-      func_0(ps);
+      func_0(pss);
     else
-      func_1(ps);
-    ResetEvent(pss->nextJob);
-    SetEvent(pss->jobFinished);
+      func_1(pss);
+    {
+      std::lock_guard<std::mutex> lock(pss->mtx);
+      pss->job_state = 0;
   }
+    pss->cv.notify_one();
+}
 }
 
 /***************************************
@@ -481,9 +487,8 @@ inline bool writeOk(const int* a, const int nthreads, const int x, const int y,
   return true;
 }
 
-void func_0(void* ps)
+void func_0(PS_INFO* pss)
 {
-  PS_INFO* pss = (PS_INFO*)ps;
   const int b = pss->b;
   const int sheight = pss->sheight[b];
   const int eheight = pss->eheight[b];
@@ -494,7 +499,7 @@ void func_0(void* ps)
   const int sbsize = pss->sbsize;
   const int sbd1 = pss->sbsize >> 1;
   const int sosize = pss->sosize;
-  LPCRITICAL_SECTION csect = pss->csect;
+  std::mutex* csect = pss->csect;
   const int nthreads = pss->nthreads;
   const int tidx = pss->tidx;
   int* cty = pss->cty;
@@ -512,7 +517,7 @@ void func_0(void* ps)
   const int offset_lsb = pss->ofs_lsb[b];
   for (int y = sheight; y < eheight; y += inc)
   {
-    const bool tcheck = (nthreads > 1 && min(y - sheight, eheight - y) < sbsize) ? true : false;
+    const bool tcheck = (nthreads > 1 && std::min(y - sheight, eheight - y) < sbsize) ? true : false;
     for (int x = 0; x <= width - sbsize; x += inc)
     {
       pss->proc0(srcp + x * pss->pixelsize, hw, dftr, src_pitch, sbsize, offset_lsb); // fixme more optim
@@ -529,17 +534,17 @@ void func_0(void* ps)
         if (tcheck) // potential thread conflict updating ebp
         {
         wloop:
-          EnterCriticalSection(csect);
+          csect->lock();
           // are any other threads updating pixels in this block?
           if (writeOk(cty, nthreads, x, y, sbsize))
           {
             ctyT[0] = x; // if not, set that this thread is
             ctyT[1] = y;
-            LeaveCriticalSection(csect);
+            csect->unlock();
           }
           else // if so, wait
           {
-            LeaveCriticalSection(csect);
+            csect->unlock();
             goto wloop;
           }
         }
@@ -555,9 +560,8 @@ void func_0(void* ps)
   }
 }
 
-void func_1(void* ps)
+void func_1(PS_INFO* pss)
 {
-  PS_INFO* pss = (PS_INFO*)ps;
   nlCache* fc = pss->fc;
   const int b = pss->b;
   PlanarFrame* src = fc->frames[0]->ppf;
@@ -569,7 +573,7 @@ void func_1(void* ps)
   const int sbsize = pss->sbsize;
   const int sbd1 = pss->sbsize >> 1;
   const int sosize = pss->sosize;
-  LPCRITICAL_SECTION csect = pss->csect;
+  std::mutex* csect = pss->csect;
   const int nthreads = pss->nthreads;
   const int tidx = pss->tidx;
   int* cty = pss->cty;
@@ -594,7 +598,7 @@ void func_1(void* ps)
   const int offset_lsb = pss->ofs_lsb[b];
   for (int y = sheight; y < eheight; y += inc)
   {
-    const bool tcheck = (nthreads > 1 && min(y - sheight, eheight - y) < sbsize) ? true : false;
+    const bool tcheck = (nthreads > 1 && std::min(y - sheight, eheight - y) < sbsize) ? true : false;
     for (int x = 0; x <= width - sbsize; x += inc)
     {
       for (int z = 0; z <= stopz; ++z)
@@ -616,17 +620,17 @@ void func_1(void* ps)
         if (tcheck) // potential thread conflict updating ebp
         {
         wloop:
-          EnterCriticalSection(csect);
+          csect->lock();
           // are any other threads updating pixels this block?
           if (writeOk(cty, nthreads, x, y, sbsize))
           {
             ctyT[0] = x; // if not, set that this thread is
             ctyT[1] = y;
-            LeaveCriticalSection(csect);
+            csect->unlock();
           }
           else // if so, wait
           {
-            LeaveCriticalSection(csect);
+            csect->unlock();
             goto wloop;
           }
         }
@@ -823,11 +827,17 @@ PVideoFrame dfttest::GetFrame_S(int n, IScriptEnvironment* env)
     for (int i = 0; i < threads; ++i)
     {
       pssInfo[i]->b = b;
-      ResetEvent(pssInfo[i]->jobFinished);
-      SetEvent(pssInfo[i]->nextJob);
+      {
+        std::lock_guard<std::mutex> lock(pssInfo[i]->mtx);
+        pssInfo[i]->job_state = 1;
+    }
+      pssInfo[i]->cv.notify_one();
     }
     for (int i = 0; i < threads; ++i)
-      WaitForSingleObject(pssInfo[i]->jobFinished, INFINITE);
+    {
+      std::unique_lock<std::mutex> lock(pssInfo[i]->mtx);
+      pssInfo[i]->cv.wait(lock, [this, i] { return pssInfo[i]->job_state == 0; });
+    }
     conv_result_plane_to_int(width, height, b, b, env);
   }
   return build_output_frame(src, env);
@@ -1090,12 +1100,18 @@ void dfttest::processTemporalBlock(int pos)
     for (int i = 0; i < threads; ++i)
     {
       pssInfo[i]->b = b;
-      ResetEvent(pssInfo[i]->jobFinished);
-      SetEvent(pssInfo[i]->nextJob);
+      {
+        std::lock_guard<std::mutex> lock(pssInfo[i]->mtx);
+        pssInfo[i]->job_state = 1;
+    }
+      pssInfo[i]->cv.notify_one();
     }
     for (int i = 0; i < threads; ++i)
-      WaitForSingleObject(pssInfo[i]->jobFinished, INFINITE);
+    {
+      std::unique_lock<std::mutex> lock(pssInfo[i]->mtx);
+      pssInfo[i]->cv.wait(lock, [this, i] { return pssInfo[i]->job_state == 0; });
   }
+}
 }
 
 void removeMean_C(float* dftc, const float* dftgc, const int ccnt, float* dftc2)
@@ -1698,7 +1714,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   if (dither < 0 || dither > 100)
     env->ThrowError("dfttest:  invalid dither value!\n");
   if (threads == 0)
-    threads = num_processors();
+    threads = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
   hLib = LoadLibrary("libfftw3f-3.dll");
   if (hLib)
   {
@@ -1881,14 +1897,12 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   }
   _aligned_free(ta);
   _aligned_free(dftgr);
-  InitializeCriticalSectionAndSpinCount(&csect, 0x80000400);
-  tids = (unsigned*)malloc(threads * sizeof(unsigned));
-  thds = (HANDLE*)malloc(threads * sizeof(HANDLE));
+  thds = new std::thread[threads];
   pssInfo = (PS_INFO**)malloc(threads * sizeof(PS_INFO*));
   PlanarFrame* pf = tbsize <= 1 ? nlf->ppf : fc->frames[0]->ppf;
   for (int i = 0; i < threads; ++i)
   {
-    pssInfo[i] = (PS_INFO*)calloc(1, sizeof(PS_INFO));
+    pssInfo[i] = new PS_INFO();
     pssInfo[i]->type = (tmode * 4) + (tbsize > 1 ? 2 : 0) + smode;
     pssInfo[i]->zmean = zmean;
     pssInfo[i]->ccnt = ccnt << 1;
@@ -2018,8 +2032,6 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
             pssInfo[i]->filterCoeffs = filter_6_SSE;
           else
             pssInfo[i]->filterCoeffs = filter_5_SSE2;
-
-          pssInfo[i]->filterCoeffs = filter_6_SSE; // debug, to be deleted
         }
         else if (ftype == 1) pssInfo[i]->filterCoeffs = filter_1_SSE;
         else if (ftype == 2) pssInfo[i]->filterCoeffs = filter_2_SSE;
@@ -2477,15 +2489,6 @@ void dfttest::loadFile(float* dest, const char* src, const float wscale, IScript
       src, c, ccnt);
 }
 
-int num_processors()
-{
-  int pcount = 0;
-  DWORD_PTR p_aff, s_aff;
-  GetProcessAffinityMask(GetCurrentProcess(), &p_aff, &s_aff);
-  for (; p_aff != 0; p_aff >>= 1)
-    pcount += (p_aff & 1);
-  return pcount;
-}
 
 double besselI0(double p)
 {
@@ -2596,18 +2599,17 @@ dfttest::~dfttest()
 {
   for (int i = 0; i < threads; ++i)
   {
-    pssInfo[i]->type = -1;
-    SetEvent(pssInfo[i]->nextJob);
+    {
+      std::lock_guard<std::mutex> lock(pssInfo[i]->mtx);
+      pssInfo[i]->job_state = -1;
+    }
+    pssInfo[i]->cv.notify_one();
   }
-  WaitForMultipleObjects(threads, thds, TRUE, INFINITE);
   for (int i = 0; i < threads; ++i)
-    CloseHandle(thds[i]);
-  free(tids);
-  free(thds);
+    thds[i].join();
+  delete[] thds;
   for (int i = 0; i < threads; ++i)
   {
-    CloseHandle(pssInfo[i]->jobFinished);
-    CloseHandle(pssInfo[i]->nextJob);
     _aligned_free(pssInfo[i]->dftr);
     _aligned_free(pssInfo[i]->dftc);
     _aligned_free(pssInfo[i]->dftc2);
@@ -2615,7 +2617,7 @@ dfttest::~dfttest()
       _aligned_free(pssInfo[i]->pfplut);
     if (i == 0)
       free(pssInfo[i]->cty);
-    free(pssInfo[i]);
+    delete pssInfo[i];
   }
   free(pssInfo);
   {
@@ -2646,7 +2648,6 @@ dfttest::~dfttest()
   if (pmins) _aligned_free(pmins);
   if (pmaxs) _aligned_free(pmaxs);
   if (hLib) FreeLibrary(hLib);
-  DeleteCriticalSection(&csect);
 }
 
 AVSValue __cdecl Create_dfttest(AVSValue args, void* user_data, IScriptEnvironment* env)
