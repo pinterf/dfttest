@@ -21,10 +21,19 @@
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
-#define _WIN32_WINNT 0x0500  // Windows Server 2000 or above
+#include "avs/config.h"  // AVS_WINDOWS, AVS_POSIX
 
-#include <windows.h>
-#include <malloc.h>
+#ifdef AVS_WINDOWS
+#  include "avs/win.h"
+#  include <windows.h>
+#  include <malloc.h>    // _aligned_malloc, _aligned_free
+#else
+#  include "avs/alignment.h"
+#  define _aligned_malloc(size, alignment) avs_malloc(size, alignment)
+#  define _aligned_free(ptr) avs_free(ptr)
+#  include <dlfcn.h>     // dlopen, dlsym, dlclose
+#endif
+
 #ifdef INTEL_INTRINSICS
 #  include <emmintrin.h>
 #endif
@@ -43,6 +52,20 @@
 #  include "fmath.h"
 #endif
 
+// Platform-agnostic dynamic library loading
+#ifdef AVS_WINDOWS
+  typedef HINSTANCE lib_handle_t;
+#  define FFTW3F_LIB_NAME "libfftw3f-3.dll"
+#  define avs_load_library(name) LoadLibrary(name)
+#  define avs_get_proc(handle, name) GetProcAddress(handle, name)
+#  define avs_free_library(handle) FreeLibrary(handle)
+#else
+  typedef void* lib_handle_t;
+#  define FFTW3F_LIB_NAME "libfftw3f.so.3"
+#  define avs_load_library(name) dlopen(name, RTLD_LAZY)
+#  define avs_get_proc(handle, name) dlsym(handle, name)
+#  define avs_free_library(handle) dlclose(handle)
+#endif
 
 typedef float fftwf_complex[2];
 typedef struct fftwf_plan_s* fftwf_plan;
@@ -224,7 +247,7 @@ private:
   PlanarFrame* dstPF_all;
   nlCache* fc;
   nlFrame* nlf;
-  HINSTANCE hLib;
+  lib_handle_t hLib;
   PS_INFO** pssInfo;
   std::thread* thds;
   std::mutex csect;

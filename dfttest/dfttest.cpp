@@ -121,9 +121,9 @@ void threadPool(PS_INFO* pss)
     {
       std::lock_guard<std::mutex> lock(pss->mtx);
       pss->job_state = 0;
-  }
+    }
     pss->cv.notify_one();
-}
+  }
 }
 
 /***************************************
@@ -824,7 +824,7 @@ PVideoFrame dfttest::GetFrame_S(int n, IScriptEnvironment* env)
       {
         std::lock_guard<std::mutex> lock(pssInfo[i]->mtx);
         pssInfo[i]->job_state = 1;
-    }
+      }
       pssInfo[i]->cv.notify_one();
     }
     for (int i = 0; i < threads; ++i)
@@ -1099,15 +1099,15 @@ void dfttest::processTemporalBlock(int pos)
       {
         std::lock_guard<std::mutex> lock(pssInfo[i]->mtx);
         pssInfo[i]->job_state = 1;
-    }
+      }
       pssInfo[i]->cv.notify_one();
     }
     for (int i = 0; i < threads; ++i)
     {
       std::unique_lock<std::mutex> lock(pssInfo[i]->mtx);
       pssInfo[i]->cv.wait(lock, [this, i] { return pssInfo[i]->job_state == 0; });
+    }
   }
-}
 }
 
 void removeMean_C(float* dftc, const float* dftgc, const int ccnt, float* dftc2)
@@ -1724,23 +1724,23 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
     env->ThrowError("dfttest:  invalid dither value!\n");
   if (threads == 0)
     threads = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
-  hLib = LoadLibrary("libfftw3f-3.dll");
+  hLib = avs_load_library(FFTW3F_LIB_NAME);
   if (hLib)
   {
     fftwf_destroy_plan =
-      (fftwf_destroy_plan_proc)GetProcAddress(hLib, "fftwf_destroy_plan");
+      (fftwf_destroy_plan_proc)avs_get_proc(hLib, "fftwf_destroy_plan");
     fftwf_plan_dft_r2c_3d =
-      (fftwf_plan_dft_r2c_3d_proc)GetProcAddress(hLib, "fftwf_plan_dft_r2c_3d");
+      (fftwf_plan_dft_r2c_3d_proc)avs_get_proc(hLib, "fftwf_plan_dft_r2c_3d");
     fftwf_plan_dft_c2r_3d =
-      (fftwf_plan_dft_c2r_3d_proc)GetProcAddress(hLib, "fftwf_plan_dft_c2r_3d");
+      (fftwf_plan_dft_c2r_3d_proc)avs_get_proc(hLib, "fftwf_plan_dft_c2r_3d");
     fftwf_plan_dft_r2c_2d =
-      (fftwf_plan_dft_r2c_2d_proc)GetProcAddress(hLib, "fftwf_plan_dft_r2c_2d");
+      (fftwf_plan_dft_r2c_2d_proc)avs_get_proc(hLib, "fftwf_plan_dft_r2c_2d");
     fftwf_plan_dft_c2r_2d =
-      (fftwf_plan_dft_c2r_2d_proc)GetProcAddress(hLib, "fftwf_plan_dft_c2r_2d");
+      (fftwf_plan_dft_c2r_2d_proc)avs_get_proc(hLib, "fftwf_plan_dft_c2r_2d");
     fftwf_execute_dft_r2c =
-      (fftwf_execute_dft_r2c_proc)GetProcAddress(hLib, "fftwf_execute_dft_r2c");
+      (fftwf_execute_dft_r2c_proc)avs_get_proc(hLib, "fftwf_execute_dft_r2c");
     fftwf_execute_dft_c2r =
-      (fftwf_execute_dft_c2r_proc)GetProcAddress(hLib, "fftwf_execute_dft_c2r");
+      (fftwf_execute_dft_c2r_proc)avs_get_proc(hLib, "fftwf_execute_dft_c2r");
   }
   if (!hLib || !fftwf_destroy_plan || !fftwf_execute_dft_r2c ||
     !fftwf_execute_dft_c2r || !fftwf_plan_dft_r2c_3d || !fftwf_plan_dft_c2r_3d ||
@@ -1786,10 +1786,10 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   }
   PlanarFrame* padPF = new PlanarFrame();
   padPF->setCPUFlags(env->GetCPUFlags());
-  padPF->createPlanar(noyl * lsb_in_hmul, noyc * lsb_in_hmul, noxl, noxc, 
-    vi.IsPlanarRGB() || vi.IsPlanarRGBA(), 
-    vi.NumComponents()==4, 
-    pixelsize, 
+  padPF->createPlanar(noyl * lsb_in_hmul, noyc * lsb_in_hmul, noxl, noxc,
+    vi.IsPlanarRGB() || vi.IsPlanarRGBA(),
+    vi.NumComponents()==4,
+    pixelsize,
     bits_per_pixel);
 
   if (tbsize > 1)
@@ -1853,9 +1853,13 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   }
   wscale = 1.0f / wscale;
   const float wscalef = ftype < 2 ? wscale : 1.0f;
-  char buf[512];
-  sprintf(buf, "dfttest:  scaling factor = %f\n", wscale);
-  OutputDebugString(buf);
+#ifdef AVS_WINDOWS
+  {
+    char buf[512];
+    sprintf(buf, "dfttest:  scaling factor = %f\n", wscale);
+    OutputDebugString(buf);
+  }
+#endif
   fftwf_execute_dft_r2c(ftg, dftgr, dftgc);
   sigmas = (float*)_aligned_malloc((ccnt * 2 + 11) * sizeof(float), 16);
   sigmas2 = (float*)_aligned_malloc((ccnt * 2 + 11) * sizeof(float), 16);
@@ -2050,7 +2054,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
         else if (ftype == 3) pssInfo[i]->filterCoeffs = filter_3_SSE;
         else pssInfo[i]->filterCoeffs = filter_4_SSE;
       }
-      
+
       if (!(sbsize & 7)) // mod8
       {
         // further specialization
@@ -2065,7 +2069,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
           if (useAVX2) pssInfo[i]->proc0 = proc0_float_to_float_AVX2_8pixels; break;
         }
         pssInfo[i]->proc1 = useAVX2 ? proc1_AVX2_8 : proc1_SSE_8;
-        // some of these may differ from C, e.g. C has more accurate 1/x, SIMD has only approximate rcp
+        // some of these may differ from C, e.g. C has more accurate 1/x, SIMD has only approximate rcp (until we change it)
         if (ftype == 0)
         {
           if (fabsf(_f0beta - 1.0f) < 0.00005f)
@@ -2089,7 +2093,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
         pssInfo[i]->proc0 = proc0_stacked16_to_float_SSE2_4pixels;
       else
         pssInfo[i]->proc0 = proc0_stacked16_to_float_C;
-      }
+    }
 #else
     if (lsb_in_flag)
       pssInfo[i]->proc0 = proc0_stacked16_to_float_C;
@@ -2260,8 +2264,10 @@ void dfttest::getNoiseSpectrum(const char* fname, const char* nstring,
     }
     fclose(f);
   }
+#ifdef AVS_WINDOWS
   sprintf(buf, "dfttest:  alpha = %f  nnpoints = %d\n", alpha, nnpoints);
   OutputDebugString(buf);
+#endif
   for (int ct = 0; ct < nnpoints; ++ct)
   {
     float* dftc = (float*)pss->dftc;
@@ -2660,7 +2666,7 @@ dfttest::~dfttest()
   if (sigmas2) _aligned_free(sigmas2);
   if (pmins) _aligned_free(pmins);
   if (pmaxs) _aligned_free(pmaxs);
-  if (hLib) FreeLibrary(hLib);
+  if (hLib) avs_free_library(hLib);
 }
 
 AVSValue __cdecl Create_dfttest(AVSValue args, void* user_data, IScriptEnvironment* env)
