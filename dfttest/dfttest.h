@@ -4,7 +4,7 @@
 **   2D/3D frequency domain denoiser.
 **
 **   Copyright (C) 2007-2010 Kevin Stone, 2017 (C) DJATOM
-**             (C) 2020 pinterf
+**             (C) 2020, 2026 pinterf
 **
 **   This program is free software; you can redistribute it and/or modify
 **   it under the terms of the GNU General Public License as published by
@@ -25,6 +25,10 @@
 
 #include <windows.h>
 #include <malloc.h>
+#ifdef INTEL_INTRINSICS
+#  include <emmintrin.h>
+#endif
+
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <stdio.h>
@@ -35,8 +39,10 @@
 #include "avisynth.h"
 #include "PlanarFrame.h"
 #include "MersenneTwister.h"
-#include <emmintrin.h>
-#include "fmath.h"
+#ifdef INTEL_INTRINSICS
+#  include "fmath.h"
+#endif
+
 
 typedef float fftwf_complex[2];
 typedef struct fftwf_plan_s* fftwf_plan;
@@ -136,7 +142,7 @@ public:
   int fnum;
   PlanarFrame* pf, * ppf;
   nlFrame();
-  nlFrame(PlanarFrame* tp, VideoInfo& vi);
+  nlFrame(PlanarFrame* tp, VideoInfo& vi, int cpuFlags = 0);
   ~nlFrame();
   void setFNum(int i);
 };
@@ -147,7 +153,7 @@ public:
   nlFrame** frames;
   int start_pos, size;
   nlCache();
-  nlCache(int _size, PlanarFrame* tp, VideoInfo& vi);
+  nlCache(int _size, PlanarFrame* tp, VideoInfo& vi, int cpuFlags = 0);
   ~nlCache();
   void resetCacheStart(int first, int last);
   int getCachePos(int n);

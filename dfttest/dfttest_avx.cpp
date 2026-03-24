@@ -4,7 +4,7 @@
 **   2D/3D frequency domain denoiser.
 **
 **   Copyright (C) 2007-2010 Kevin Stone, 2017 (C) DJATOM
-**             (C) 2020 pinterf
+**             (C) 2020, 2026 pinterf
 **
 **   This program is free software; you can redistribute it and/or modify
 **   it under the terms of the GNU General Public License as published by
@@ -24,6 +24,8 @@
 #include "dfttest_avx.h"
 #include "avs/config.h"
 
+#include <immintrin.h>
+
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("avx")))
 #endif
@@ -42,7 +44,6 @@ void removeMean_AVX(float* dftc, const float* dftgc, const int ccnt, float* dftc
     auto dftc_result = _mm256_sub_ps(dftc_loop, dftc2_result);
     _mm256_storeu_ps(dftc + h, dftc_result);
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -57,7 +58,6 @@ void addMean_AVX(float* dftc, const int ccnt, const float* dftc2)
     auto dftc_result = _mm256_add_ps(dftc2_loop, dftc_loop);
     _mm256_storeu_ps(dftc + h, dftc_result);
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -88,6 +88,5 @@ void filter_0_AVX_8(float* dftc, const float* sigmas, const int ccnt,
     auto result = _mm256_mul_ps(dftc_loop, coeff);
     _mm256_storeu_ps(dftc + h, result);
   }
-  _mm256_zeroupper();
 }
 

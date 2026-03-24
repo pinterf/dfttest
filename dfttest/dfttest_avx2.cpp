@@ -4,7 +4,7 @@
 **   2D/3D frequency domain denoiser.
 **
 **   Copyright (C) 2007-2010 Kevin Stone, 2017 (C) DJATOM
-**             (C) 2020 pinterf
+**             (C) 2020, 2026 pinterf
 **
 **   This program is free software; you can redistribute it and/or modify
 **   it under the terms of the GNU General Public License as published by
@@ -21,8 +21,8 @@
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
-#include "dfttest_avx2.h"
 #include "avs/config.h"
+#include "dfttest_avx2.h"
 #include <stdint.h>
 #include "fmath.h"
 
@@ -51,7 +51,6 @@ void proc0_uint8_to_float_AVX2_8pixels(const unsigned char* s0, const float* s1,
     s1 += p1;
     d += p1;
   }
-  _mm256_zeroupper();
 }
 
 template<int bits_per_pixel>
@@ -84,7 +83,6 @@ void proc0_uint16_to_float_AVX2_8pixels(const unsigned char* s0, const float* s1
     s1 += p1;
     d += p1;
   }
-  _mm256_zeroupper();
 }
 
 // instantiate
@@ -118,7 +116,6 @@ void proc0_float_to_float_AVX2_8pixels(const unsigned char* s0, const float* s1,
     s1 += p1;
     d += p1;
   }
-  _mm256_zeroupper();
 }
 
 
@@ -142,7 +139,6 @@ void proc1_AVX2_8(const float* s0, const float* s1, float* d,
     s1 += p0;
     d += p1;
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -171,7 +167,6 @@ void filter_0_AVX2_8(float* dftc, const float* sigmas, const int ccnt,
     auto result = _mm256_mul_ps(dftc_loop, coeff);
     _mm256_storeu_ps(dftc + h, result);
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -193,7 +188,6 @@ void filter_1_AVX2_8(float* dftc, const float* sigmas, const int ccnt,
     auto and1_loop = _mm256_and_ps(cmple1_loop, dftc_loop);
     _mm256_storeu_ps(dftc + h, and1_loop);
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -209,7 +203,6 @@ void filter_2_AVX2_8(float* dftc, const float* sigmas, const int ccnt,
     auto mul_loop = _mm256_mul_ps(dftc_loop, sigmas_loop);
     _mm256_storeu_ps(dftc + h, mul_loop);
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -239,7 +232,6 @@ void filter_3_AVX2_8(float* dftc, const float* sigmas, const int ccnt,
     auto mul2_loop = _mm256_mul_ps(sigma_chosen, dftc_loop);
     _mm256_storeu_ps(dftc + h, mul2_loop);
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -273,7 +265,6 @@ void filter_4_AVX2_8(float* dftc, const float* sigmas, const int ccnt,
     auto mul6_loop = _mm256_mul_ps(mul5_loop, dftc_loop);
     _mm256_storeu_ps(dftc + h, mul6_loop);
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -303,7 +294,6 @@ void filter_5_AVX2_8(float* dftc, const float* sigmas, const int ccnt,
     auto mul4_loop = _mm256_mul_ps(dftc_loop, pow1_loop);
     _mm256_storeu_ps(dftc + h, mul4_loop);
   }
-  _mm256_zeroupper();
 }
 
 #if defined(GCC) || defined(CLANG)
@@ -337,6 +327,5 @@ void filter_6_AVX2_8(float* dftc, const float* sigmas, const int ccnt,
     auto mul4_loop = _mm256_mul_ps(dftc_loop, rcp2_loop);
     _mm256_storeu_ps(dftc + h, mul4_loop);
   }
-  _mm256_zeroupper();
 }
 

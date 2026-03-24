@@ -21,7 +21,10 @@
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#include "avs/config.h"
+#ifdef INTEL_INTRINSICS
 #include <immintrin.h>
+#endif
 
 void removeMean_AVX(float* dftc, const float* dftgc, const int ccnt, float* dftc2);
 void addMean_AVX(float* dftc, const int ccnt, const float* dftc2);

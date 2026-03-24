@@ -24,11 +24,18 @@
 #ifndef __PlanarFrame_H__
 #define __PlanarFrame_H__
 
-#include <windows.h>
-#include <malloc.h>
+#include "avs/config.h"
+#ifdef AVS_WINDOWS
+#  include <windows.h>
+#  include <malloc.h>
+#else
+#  include "avs/alignment.h"
+#  define _aligned_malloc(size, alignment) avs_malloc(size, alignment)
+#  define _aligned_free(ptr) avs_free(ptr)
+#endif
 #include <stdint.h>
 #include "internal.h"
-#include ".\avs\cpuid.h"
+#include "avs/cpuid.h"
 
 #define MIN_PAD 10
 #define MIN_ALIGNMENT 64
@@ -55,8 +62,6 @@ private:
   uint8_t* planar_1, * planar_2, * planar_3, * planar_4;
   bool allocSpace(VideoInfo& viInfo);
   bool allocSpace(int specs[4], bool rgbplanar, bool alphaplanar, uint8_t _pixelsize, uint8_t _bits_per_pixel);
-  int getCPUInfo(void);
-  int checkCPU(void);
   bool copyInternalFrom(PVideoFrame& frame, VideoInfo& viInfo);
   bool copyInternalFrom(PlanarFrame& frame);
   bool copyInternalTo(PVideoFrame& frame, VideoInfo& viInfo);
@@ -81,6 +86,7 @@ public:
   PlanarFrame(VideoInfo& viInfo);
   virtual ~PlanarFrame(void);
   bool GetAllocStatus(void) { return(alloc_ok); }
+  void setCPUFlags(int flags) { cpu = flags; }
   bool createPlanar(int yheight, int uvheight, int ywidth, int uvwidth, bool rgbplanar, bool alphaplanar, uint8_t pixelsize, uint8_t bits_per_pixel);
   bool createPlanar(int height, int width, uint8_t chroma_format, bool rgbplanar, bool alphaplanar, uint8_t pixelsize, uint8_t bits_per_pixel);
   bool createFromProfile(VideoInfo& viInfo);

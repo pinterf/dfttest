@@ -4,7 +4,7 @@
 **   2D/3D frequency domain denoiser.
 **
 **   Copyright (C) 2007-2010 Kevin Stone, 2017 (C) DJATOM
-**             (C) 2020 pinterf
+**             (C) 2020, 2026 pinterf
 **
 **   This program is free software; you can redistribute it and/or modify
 **   it under the terms of the GNU General Public License as published by
@@ -28,9 +28,11 @@
 #pragma warning(disable : 4305)
 
 #include "dfttest.h"
+#ifdef INTEL_INTRINSICS
 #include "dfttest_avx.h"
 #include "dfttest_avx2.h"
 #include "smmintrin.h"
+#endif
 #include <algorithm>
 #include <cassert>
 #include <mutex>
@@ -200,6 +202,7 @@ void proc0_stacked16_to_float_C(const unsigned char* s0, const float* s1, float*
   }
 }
 
+#ifdef INTEL_INTRINSICS
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("sse2")))
 #endif
@@ -275,26 +278,11 @@ void proc0_stacked16_to_float_SSE2_4pixels(const unsigned char* s0, const float*
   {
     for (int v = 0; v < p1; v += 4)
     {
-#if 0
-      auto msb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(s0 + v));
-      auto lsb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(s0 + v + offset_lsb));
-      // msb ABCDEFGHIJKLMNOP  integer  8 bit
-      // lsb abcdefghijklmnop  fraction 8 bit
-      auto int_lo = _mm_unpacklo_epi8(lsb, msb); // iIjJkKlLmMnNoOpP
-      auto int_hi = _mm_unpackhi_epi8(lsb, msb); // aAbBcCdDeEfFgGhH
-      // slli epi 16, 8                          // A0B0C0D0E0F0G0H0
-      auto shift = _mm_unpacklo_epi8(_mm_slli_epi16(int_hi, 8), zero); // 00 E0 00 F0 00 G0 00 H0
-      auto add = _mm_add_epi16(shift, int_lo); // lower part: mM+E0 nN+00 oO+G0 pP+H0
-      // ???? bug.
-      // stacked16 input conversion is wrong! Every 2nd pixel contains traces of the lsb part of pixels 4 positions on the right
-      // e.g: stacked B0E3 B0E3 B0E3 B0E3 (16 bit pixels msb;lsb) -> b0e3 b1c6 b0e3 b1c6
-#else
       // stacked16 to float: fixed in 1.9.5
       auto msb = _mm_loadu_si32(reinterpret_cast<const __m128i*>(s0 + v));
       auto lsb = _mm_loadu_si32(reinterpret_cast<const __m128i*>(s0 + v + offset_lsb));
       // 4x16
       auto int4x16 = _mm_unpacklo_epi8(lsb, msb);
-#endif
       //4x16->4x32
       auto int4x32 = _mm_unpacklo_epi16(int4x16, zero);
       // int->float
@@ -412,6 +400,7 @@ void proc0_uint16_to_float_SSE2_8pixels(const unsigned char* s0, const float* s1
     d += p1;
   }
 }
+#endif // INTEL_INTRINSICS
 
 // full float domain, no hbd problem here
 void proc1_C(const float* s0, const float* s1, float* d,
@@ -427,6 +416,7 @@ void proc1_C(const float* s0, const float* s1, float* d,
   }
 }
 
+#ifdef INTEL_INTRINSICS
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("sse2")))
 #endif
@@ -475,6 +465,7 @@ void proc1_SSE_8(const float* s0, const float* s1, float* d,
     d += p1;
   }
 }
+#endif // INTEL_INTRINSICS
 
 inline bool writeOk(const int* a, const int nthreads, const int x, const int y,
   const int sbsize)
@@ -774,6 +765,7 @@ void dither_C(const float* p, unsigned char* dst, const int src_height,
   free(dither);
 }
 
+#ifdef INTEL_INTRINSICS
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("sse2")))
 #endif
@@ -805,6 +797,7 @@ void intcast_float_to_uint8_t_SSE2_8pixels(const float* p, unsigned char* dst, c
     dst += dst_pitch;
   }
 }
+#endif // INTEL_INTRINSICS
 
 PVideoFrame dfttest::GetFrame_S(int n, IScriptEnvironment* env)
 {
@@ -1039,9 +1032,11 @@ void dfttest::conv_result_plane_to_int(int width, int height, int b, int ebuff_i
     if (bits_per_pixel == 8) {
       if (dither)
         dither_C(ebp, dstp, src_height, src_width, dst_pitch, width, dither);
+#ifdef INTEL_INTRINSICS
       else if (!(src_width & 7) && // mod 8
         (((cpuflags & CPUF_SSE2) && opt == 0) || opt >= 2))
         intcast_float_to_uint8_t_SSE2_8pixels(ebp, dstp, src_height, src_width, dst_pitch, width);
+#endif
       else
         intcast_float_to_uint8_t_C(ebp, dstp, src_height, src_width, dst_pitch, width);
     }
@@ -1127,6 +1122,7 @@ void removeMean_C(float* dftc, const float* dftgc, const int ccnt, float* dftc2)
   }
 }
 
+#ifdef INTEL_INTRINSICS
 void removeMean_SSE(float* dftc, const float* dftgc, const int ccnt, float* dftc2)
 {
   const float gf = dftc[0] / dftgc[0];
@@ -1141,6 +1137,7 @@ void removeMean_SSE(float* dftc, const float* dftgc, const int ccnt, float* dftc
     _mm_storeu_ps(dftc + h, dftc_result);
   }
 }
+#endif
 
 void addMean_C(float* dftc, const int ccnt, const float* dftc2)
 {
@@ -1151,6 +1148,7 @@ void addMean_C(float* dftc, const int ccnt, const float* dftc2)
   }
 }
 
+#ifdef INTEL_INTRINSICS
 void addMean_SSE(float* dftc, const int ccnt, const float* dftc2)
 {
   for (int h = 0; h < ccnt; h += 4)
@@ -1161,6 +1159,7 @@ void addMean_SSE(float* dftc, const int ccnt, const float* dftc2)
     _mm_storeu_ps(dftc + h, dftc_result);
   }
 }
+#endif
 
 void filter_0_C(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
@@ -1174,6 +1173,7 @@ void filter_0_C(float* dftc, const float* sigmas, const int ccnt,
   }
 }
 
+#ifdef INTEL_INTRINSICS
 void filter_0_SSE(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
 {
@@ -1198,6 +1198,7 @@ void filter_0_SSE(float* dftc, const float* sigmas, const int ccnt,
     _mm_storeu_ps(dftc + h, result);
   }
 }
+#endif
 
 void filter_1_C(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
@@ -1210,6 +1211,7 @@ void filter_1_C(float* dftc, const float* sigmas, const int ccnt,
   }
 }
 
+#ifdef INTEL_INTRINSICS
 void filter_1_SSE(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
 {
@@ -1227,6 +1229,7 @@ void filter_1_SSE(float* dftc, const float* sigmas, const int ccnt,
     _mm_storeu_ps(dftc + h, and1_loop);
   }
 }
+#endif
 
 void filter_2_C(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
@@ -1238,6 +1241,7 @@ void filter_2_C(float* dftc, const float* sigmas, const int ccnt,
   }
 }
 
+#ifdef INTEL_INTRINSICS
 void filter_2_SSE(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
 {
@@ -1249,6 +1253,7 @@ void filter_2_SSE(float* dftc, const float* sigmas, const int ccnt,
     _mm_storeu_ps(dftc + h, mul_loop);
   }
 }
+#endif
 
 void filter_3_C(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
@@ -1269,6 +1274,7 @@ void filter_3_C(float* dftc, const float* sigmas, const int ccnt,
   }
 }
 
+#ifdef INTEL_INTRINSICS
 // mimic sse4.1
 static AVS_FORCEINLINE __m128 _MM_BLENDV_PS(__m128 x, __m128 y, __m128 mask)
 {
@@ -1298,18 +1304,11 @@ void filter_3_SSE(float* dftc, const float* sigmas, const int ccnt,
    
     // auto sigma_chosen = _mm_blendv_ps(sigmas2_loop, sigmas_loop, and1_loop); // sse4.1
     auto sigma_chosen = _MM_BLENDV_PS(sigmas2_loop, sigmas_loop, and1_loop); // sse
-#if 0
-    // bug for choosing sigmas fixed in 1.9.6
-    auto and2_loop = _mm_and_ps(sigmas_loop, and1_loop);
-    auto sse_ones = _mm_set1_ps(0xFFFFFFFFFFFFFFFF);
-    auto xor1_loop = _mm_xor_ps(sse_ones, and1_loop);
-    auto and3_loop = _mm_and_ps(xor1_loop, sigmas2_loop);
-    auto sigma_chosen = _mm_or_ps(and3_loop, and2_loop);
-#endif
     auto mul2_loop = _mm_mul_ps(sigma_chosen, dftc_loop);
     _mm_storeu_ps(dftc + h, mul2_loop);
   }
 }
+#endif
 
 void filter_4_C(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
@@ -1323,6 +1322,7 @@ void filter_4_C(float* dftc, const float* sigmas, const int ccnt,
   }
 }
 
+#ifdef INTEL_INTRINSICS
 void filter_4_SSE(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
 {
@@ -1352,6 +1352,7 @@ void filter_4_SSE(float* dftc, const float* sigmas, const int ccnt,
     _mm_storeu_ps(dftc + h, mul6_loop);
   }
 }
+#endif
 
 // almost the same as filter_0 and filter_6 but with powf
 void filter_5_C(float* dftc, const float* sigmas, const int ccnt,
@@ -1367,6 +1368,8 @@ void filter_5_C(float* dftc, const float* sigmas, const int ccnt,
   }
 }
 
+
+#ifdef INTEL_INTRINSICS
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("sse2")))
 #endif
@@ -1395,6 +1398,7 @@ void filter_5_SSE2(float* dftc, const float* sigmas, const int ccnt,
     _mm_storeu_ps(dftc + h, mul4_loop);
   }
 }
+#endif
 
 // same as filter_0 and filter_5 but with sqrt
 void filter_6_C(float* dftc, const float* sigmas, const int ccnt,
@@ -1409,6 +1413,7 @@ void filter_6_C(float* dftc, const float* sigmas, const int ccnt,
   }
 }
 
+#ifdef INTEL_INTRINSICS
 void filter_6_SSE(float* dftc, const float* sigmas, const int ccnt,
   const float* pmin, const float* pmax, const float* sigmas2)
 {
@@ -1438,6 +1443,7 @@ void filter_6_SSE(float* dftc, const float* sigmas, const int ccnt,
     _mm_storeu_ps(dftc + h, mul4_loop);
   }
 }
+#endif
 
 template<typename pixel_t>
 void dfttest::copyPad(PlanarFrame* src, PlanarFrame* dst, IScriptEnvironment* env)
@@ -1518,12 +1524,14 @@ nlFrame::nlFrame()
   pf = ppf = NULL;
 }
 
-nlFrame::nlFrame(PlanarFrame* tp, VideoInfo& vi)
+nlFrame::nlFrame(PlanarFrame* tp, VideoInfo& vi, int cpuFlags)
 {
   fnum = -20;
   pf = new PlanarFrame(vi);
+  pf->setCPUFlags(cpuFlags);
   ppf = new PlanarFrame();
   ppf->createFromPlanar(*tp);
+  ppf->setCPUFlags(cpuFlags);
 }
 
 nlFrame::~nlFrame()
@@ -1543,7 +1551,7 @@ nlCache::nlCache()
   start_pos = size = -20;
 }
 
-nlCache::nlCache(int _size, PlanarFrame* tp, VideoInfo& vi)
+nlCache::nlCache(int _size, PlanarFrame* tp, VideoInfo& vi, int cpuFlags)
 {
   frames = NULL;
   start_pos = size = -20;
@@ -1554,7 +1562,7 @@ nlCache::nlCache(int _size, PlanarFrame* tp, VideoInfo& vi)
     frames = (nlFrame**)malloc(size * sizeof(nlFrame*));
     memset(frames, 0, size * sizeof(nlFrame*));
     for (int i = 0; i < size; ++i)
-      frames[i] = new nlFrame(tp, vi);
+      frames[i] = new nlFrame(tp, vi, cpuFlags);
   }
 }
 
@@ -1777,6 +1785,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
     noyc = grey ? 0 : (proc_height >> ssyuv) + EXTRA(proc_height >> ssyuv, sbsize) + ae;
   }
   PlanarFrame* padPF = new PlanarFrame();
+  padPF->setCPUFlags(env->GetCPUFlags());
   padPF->createPlanar(noyl * lsb_in_hmul, noyc * lsb_in_hmul, noxl, noxc, 
     vi.IsPlanarRGB() || vi.IsPlanarRGBA(), 
     vi.NumComponents()==4, 
@@ -1784,9 +1793,9 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
     bits_per_pixel);
 
   if (tbsize > 1)
-    fc = new nlCache(tbsize, padPF, vi_src);
+    fc = new nlCache(tbsize, padPF, vi_src, env->GetCPUFlags());
   else
-    nlf = new nlFrame(padPF, vi_src);
+    nlf = new nlFrame(padPF, vi_src, env->GetCPUFlags());
   const int ebcount = (tbsize > 1 && tmode == 1) ? tbsize : 1;
   ebuff = (float**)calloc(ebcount * 3, sizeof(float*));
   for (int q = 0; q < ebcount; ++q)
@@ -1801,9 +1810,11 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   }
   delete padPF;
   dstPF = new PlanarFrame(vi_byte);
+  dstPF->setCPUFlags(env->GetCPUFlags());
   if (lsb_out_flag)
   {
     dstPF_lsb = new PlanarFrame(vi_byte);
+    dstPF_lsb->setCPUFlags(env->GetCPUFlags());
     assert(dstPF_lsb->GetPitch(PLANAR_Y) == dstPF->GetPitch(PLANAR_Y));
     assert(dstPF_lsb->GetPitch(PLANAR_U) == dstPF->GetPitch(PLANAR_U));
     assert(dstPF_lsb->GetPitch(PLANAR_V) == dstPF->GetPitch(PLANAR_V));
@@ -2002,13 +2013,13 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
     else pssInfo[i]->filterCoeffs = filter_4_C;
     // end of defaults. simd will override if needed
 
+#ifdef INTEL_INTRINSICS
     const bool useAVX2 = ((env->GetCPUFlags() & CPUF_AVX2) && opt == 0) || opt == 4;
     const bool useAVX = (((env->GetCPUFlags() & CPUF_AVX) && opt == 0) || opt == 3) || useAVX2;
     const bool useSSE2 = (((env->GetCPUFlags() & CPUF_SSE2) && opt == 0) || opt == 2) || useAVX;
 
     if (useSSE2)
     {
-      
       if (!(sbsize & 3)) // mod4
       {
         switch (bits_per_pixel)
@@ -2075,17 +2086,16 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
     {
       // override converter
       if (((env->GetCPUFlags() & CPUF_SSE2) && opt == 0) || opt >= 2)
-      {
         pssInfo[i]->proc0 = proc0_stacked16_to_float_SSE2_4pixels;
-      }
       else
-      {
         pssInfo[i]->proc0 = proc0_stacked16_to_float_C;
       }
-    }
-    pssInfo[i]->jobFinished = CreateEvent(NULL, TRUE, TRUE, NULL);
-    pssInfo[i]->nextJob = CreateEvent(NULL, TRUE, FALSE, NULL);
-    thds[i] = (HANDLE)_beginthreadex(0, 0, &threadPool, (void*)(pssInfo[i]), 0, &tids[i]);
+#else
+    if (lsb_in_flag)
+      pssInfo[i]->proc0 = proc0_stacked16_to_float_C;
+#endif // INTEL_INTRINSICS
+    pssInfo[i]->job_state = 0;
+    thds[i] = std::thread(threadPool, pssInfo[i]);
   }
   if ((_nfile[0] || _nstring[0]) && ftype < 2)
     getNoiseSpectrum(_nfile, _nstring, sigmas, wscale, env);
@@ -2094,6 +2104,7 @@ dfttest::dfttest(PClip _child, bool _Y, bool _U, bool _V, int _ftype, float _sig
   {
     vi.height = proc_height * 2;
     dstPF_all = new PlanarFrame(vi);
+    dstPF_all->setCPUFlags(env->GetCPUFlags());
   }
 }
 
@@ -2146,6 +2157,7 @@ void dfttest::getNoiseSpectrum(const char* fname, const char* nstring,
 {
   PS_INFO* pss = pssInfo[0];
   PlanarFrame* prf = new PlanarFrame(vi_src);
+  prf->setCPUFlags(env->GetCPUFlags());
   memset(dest, 0, ccnt * 2 * sizeof(float));
   float* hw2 = (float*)_aligned_malloc(bvolume * sizeof(float), 16);
   createWindow(hw2, 0, tbsize, tosize, twin, tbeta, 0, sbsize, sosize, swin, sbeta);

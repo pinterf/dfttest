@@ -4,7 +4,7 @@
 **   2D/3D frequency domain denoiser.
 **
 **   Copyright (C) 2007-2010 Kevin Stone, 2017 (C) DJATOM
-**             (C) 2020 pinterf
+**             (C) 2020, 2026 pinterf
 **
 **   This program is free software; you can redistribute it and/or modify
 **   it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#include "avs/config.h"
 #include <immintrin.h>
 
 void proc0_uint8_to_float_AVX2_8pixels(const unsigned char* s0, const float* s1, float* d,
